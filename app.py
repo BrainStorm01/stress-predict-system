@@ -17,33 +17,37 @@ from sklearn.pipeline import Pipeline
 import plotly.express as px
 import plotly.graph_objects as go
 
-import openai  # 用于调用 ChatGPT API
+from openai import OpenAI  # 新增这一行，位于文件顶部 import 区
 
 def call_chatgpt_api(question: str, result_df: pd.DataFrame) -> str:
     """
-    将用户问题和部分预测结果发给 ChatGPT，
-    返回模型的分析回答。
+    基于前10行预测结果，调用 OpenAI v1 接口返回分析回答
     """
-    # 从 Streamlit secrets 中读取 API Key
-    openai.api_key = st.secrets["OPENAI_API_KEY"]
-    # 构造 prompt：包括前 10 行预测结果和用户问题
+    # 读取 Secret
+    if "OPENAI_API_KEY" not in st.secrets:
+        st.error(" 请在 Streamlit Cloud Secrets 中配置 OPENAI_API_KEY。")
+        return ""
+    # 用 v1 客户端实例化
+    client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+    # 构造 prompt
     sample = result_df.head(10).to_string(index=False)
     prompt = (
-        "下面是某次模型的部分预测结果（前10行）：\n"
+        "下面是模型的部分预测结果（前10行）：\n"
         f"{sample}\n\n"
         f"请基于这些结果回答：{question}"
     )
-    # 调用 OpenAI ChatCompletion 接口
-    resp = openai.ChatCompletion.create(
+    # 通过新接口发起 ChatCompletion 请求
+    resp = client.chat.completions.create(
         model="gpt-3.5-turbo",
         messages=[
-            {"role": "system", "content": "你是应力预测系统的智能分析助手。"},
+            {"role": "system", "content": "你是智能应力预测系统的分析助手。"},
             {"role": "user",   "content": prompt}
         ],
         temperature=0.2
     )
-    # 返回 ChatGPT 的回答文本
+    # 获取并返回回答文本
     return resp.choices[0].message.content
+
 
 # --- 页面配置 & 样式 ---
 st.set_page_config(page_title="智能应力预测系统", layout="wide")
