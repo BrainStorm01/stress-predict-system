@@ -17,6 +17,34 @@ from sklearn.pipeline import Pipeline
 import plotly.express as px
 import plotly.graph_objects as go
 
+import openai  # 用于调用 ChatGPT API
+
+def call_chatgpt_api(question: str, result_df: pd.DataFrame) -> str:
+    """
+    将用户问题和部分预测结果发给 ChatGPT，
+    返回模型的分析回答。
+    """
+    # 从 Streamlit secrets 中读取 API Key
+    openai.api_key = st.secrets["OPENAI_API_KEY"]
+    # 构造 prompt：包括前 10 行预测结果和用户问题
+    sample = result_df.head(10).to_string(index=False)
+    prompt = (
+        "下面是某次模型的部分预测结果（前10行）：\n"
+        f"{sample}\n\n"
+        f"请基于这些结果回答：{question}"
+    )
+    # 调用 OpenAI ChatCompletion 接口
+    resp = openai.ChatCompletion.create(
+        model="gpt-3.5-turbo",
+        messages=[
+            {"role": "system", "content": "你是应力预测系统的智能分析助手。"},
+            {"role": "user",   "content": prompt}
+        ],
+        temperature=0.2
+    )
+    # 返回 ChatGPT 的回答文本
+    return resp.choices[0].message.content
+
 # --- 页面配置 & 样式 ---
 st.set_page_config(page_title="智能应力预测系统", layout="wide")
 st.markdown("""
@@ -290,5 +318,23 @@ if st.session_state.get("model_trained"):
             file_name="prediction_results.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
+             # --- 智能问答区 ---
+        with st.container():
+            st.markdown('<div class="section-card">', unsafe_allow_html=True)
+            st.subheader("🤖 智能问答")
+            # 用户输入问题
+            question = st.text_input("输入你的问题，例如：‘哪几个样本误差最大？’", key="qa_input")
+            # 提交按钮
+            if st.button("提交问题", key="qa_button"):
+                if not question.strip():
+                    st.warning("⚠️ 请输入一个问题后再提交。")
+                else:
+                    # 调用 ChatGPT
+                    with st.spinner("AI 助手正在思考，请稍候..."):
+                        answer = call_chatgpt_api(question, result_df)
+                    st.markdown("**回答：**")
+                    st.write(answer)
+            st.markdown('</div>', unsafe_allow_html=True)
+
 
         st.markdown('</div>', unsafe_allow_html=True)
