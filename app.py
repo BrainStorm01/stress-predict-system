@@ -17,37 +17,44 @@ from sklearn.pipeline import Pipeline
 import plotly.express as px
 import plotly.graph_objects as go
 
-from openai import OpenAI  # 新增这一行，位于文件顶部 import 区
+from openai import OpenAI  # 确保在顶部已 import
+import openai               # 已有的 import
 
 def call_chatgpt_api(question: str, result_df: pd.DataFrame) -> str:
     """
-    基于前10行预测结果，调用 OpenAI v1 接口返回分析回答
+    基于前10行预测结果，调用 OpenAI v1 接口返回分析回答，
+    并捕获常见的速率限制错误。
     """
-    # 读取 Secret
+    # 检查 Secret
     if "OPENAI_API_KEY" not in st.secrets:
-        st.error(" 请在 Streamlit Cloud Secrets 中配置 OPENAI_API_KEY。")
-        return ""
-    # 用 v1 客户端实例化
+        return "⚠️ 未配置 OPENAI_API_KEY，无法使用智能问答。"
+    # 初始化客户端
     client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
     # 构造 prompt
     sample = result_df.head(10).to_string(index=False)
     prompt = (
         "下面是模型的部分预测结果（前10行）：\n"
-        f"{sample}\n\n"
-        f"请基于这些结果回答：{question}"
+        f"{sample}\n\n请基于这些结果回答：{question}"
     )
-    # 通过新接口发起 ChatCompletion 请求
-    resp = client.chat.completions.create(
-        model="gpt-3.5-turbo",
-        messages=[
-            {"role": "system", "content": "你是智能应力预测系统的分析助手。"},
-            {"role": "user",   "content": prompt}
-        ],
-        temperature=0.2
-    )
-    # 获取并返回回答文本
-    return resp.choices[0].message.content
 
+    try:
+        # 发起请求
+        resp = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "你是智能应力预测系统的分析助手。"},
+                {"role": "user",   "content": prompt}
+            ],
+            temperature=0.2
+        )
+        return resp.choices[0].message.content
+
+    except openai.RateLimitError:
+        # 速率限制
+        return "⚠️ 请求过于频繁，已达到速率限制，请稍后再试。"
+    except Exception as e:
+        # 捕获其它可能的错误
+        return f"❌ 调用问答接口失败：{e}"
 
 # --- 页面配置 & 样式 ---
 st.set_page_config(page_title="智能应力预测系统", layout="wide")
