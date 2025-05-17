@@ -17,8 +17,8 @@ from sklearn.pipeline import Pipeline
 import plotly.express as px
 import plotly.graph_objects as go
 
-from openai import OpenAI  # 确保在顶部已 import
-import openai               # 已有的 import
+from openai import OpenAI  
+import openai               
 
 def call_chatgpt_api(question: str, result_df: pd.DataFrame) -> str:
     """
@@ -140,27 +140,42 @@ prediction_mode = st.sidebar.radio("预测模式", ["测试集预测", "全量�
 # 3. 模型选择
 model_choice = st.sidebar.selectbox("选择模型算法", ["随机森林", "XGBoost", "SVM", "KNN"])
 
+# === 新增：调参方式与策略选择 ===
+tune_mode = st.sidebar.radio(
+    "调参方式",
+    ["手动调参", "自动调参"],
+    horizontal=True,
+    key="tune_mode"
+)
+if tune_mode == "自动调参":
+    search_strategy = st.sidebar.selectbox(
+        "自动调参策略",
+        ["网格搜索(GridSearchCV)", "随机搜索(RandomizedSearchCV)", "贝叶斯优化(Optuna)"],
+        key="search_strategy"
+    )
+
 # 4. 超参数设置
 with st.sidebar.expander("超参数设置", expanded=False):
-    if model_choice == "随机森林":
-        rf_n_estimators      = st.slider("树数量 (n_estimators)", 50, 500, 100)
-        rf_max_depth         = st.slider("最大深度 (max_depth)", 0, 30, 0)
-        rf_min_samples_split = st.slider("最小分裂样本数 (min_samples_split)", 2, 20, 2)
-        rf_min_samples_leaf  = st.slider("最小叶节点样本数 (min_samples_leaf)", 1, 10, 1)
-    elif model_choice == "XGBoost":
-        xgb_n_estimators = st.slider("树数量 (n_estimators)", 50, 500, 100)
-        xgb_max_depth    = st.slider("最大深度 (max_depth)", 1, 15, 6)
-        xgb_learning_rate= st.slider("学习率 (learning_rate)", 0.01, 0.5, 0.1, step=0.01)
-        xgb_reg_alpha    = st.slider("L1 正则 (reg_alpha)", 0.0, 1.0, 0.0, step=0.1)
-        xgb_reg_lambda   = st.slider("L2 正则 (reg_lambda)", 0.0, 2.0, 1.0, step=0.1)
-    elif model_choice == "SVM":
-        svm_C       = st.slider("C (惩罚项)", 0.1, 10.0, 1.0, step=0.1)
-        svm_epsilon = st.slider("ε (epsilon)", 0.01, 1.0, 0.1, step=0.01)
-        svm_kernel  = st.selectbox("核函数 (kernel)", ["rbf", "linear", "poly", "sigmoid"])
-    else:  # KNN
-        knn_n_neighbors = st.slider("邻居数 (n_neighbors)", 1, 20, 5)
-        knn_weights     = st.selectbox("权重方式 (weights)", ["uniform", "distance"])
-        knn_algorithm   = st.selectbox("算法 (algorithm)", ["auto", "ball_tree", "kd_tree", "brute"])
+    if tune_mode == "手动调参":
+        if model_choice == "随机森林":
+            rf_n_estimators      = st.slider("树数量 (n_estimators)", 50, 500, 100)
+            rf_max_depth         = st.slider("最大深度 (max_depth)", 0, 30, 0)
+            rf_min_samples_split = st.slider("最小分裂样本数 (min_samples_split)", 2, 20, 2)
+            rf_min_samples_leaf  = st.slider("最小叶节点样本数 (min_samples_leaf)", 1, 10, 1)
+        elif model_choice == "XGBoost":
+            xgb_n_estimators = st.slider("树数量 (n_estimators)", 50, 500, 100)
+            xgb_max_depth    = st.slider("最大深度 (max_depth)", 1, 15, 6)
+            xgb_learning_rate= st.slider("学习率 (learning_rate)", 0.01, 0.5, 0.1, step=0.01)
+            xgb_reg_alpha    = st.slider("L1 正则 (reg_alpha)", 0.0, 1.0, 0.0, step=0.1)
+            xgb_reg_lambda   = st.slider("L2 正则 (reg_lambda)", 0.0, 2.0, 1.0, step=0.1)
+        elif model_choice == "SVM":
+            svm_C       = st.slider("C (惩罚项)", 0.1, 10.0, 1.0, step=0.1)
+            svm_epsilon = st.slider("ε (epsilon)", 0.01, 1.0, 0.1, step=0.01)
+            svm_kernel  = st.selectbox("核函数 (kernel)", ["rbf", "linear", "poly", "sigmoid"])
+        else:  # KNN
+            knn_n_neighbors = st.slider("邻居数 (n_neighbors)", 1, 20, 5)
+            knn_weights     = st.selectbox("权重方式 (weights)", ["uniform", "distance"])
+            knn_algorithm   = st.selectbox("算法 (algorithm)", ["auto", "ball_tree", "kd_tree", "brute"])
 
 # 5. 开始训练按钮
 if st.sidebar.button("▶️ 开始训练"):
@@ -176,39 +191,146 @@ if st.sidebar.button("▶️ 开始训练"):
         X_train, y_train = X, y
         X_test, y_test = X, y
 
-    # 构建模型
-    if model_choice == "随机森林":
-        model = RandomForestRegressor(
-            n_estimators=rf_n_estimators,
-            max_depth=rf_max_depth or None,
-            min_samples_split=rf_min_samples_split,
-            min_samples_leaf=rf_min_samples_leaf,
-            random_state=42
-        )
-    elif model_choice == "XGBoost":
-        model = XGBRegressor(
-            n_estimators=xgb_n_estimators,
-            max_depth=xgb_max_depth,
-            learning_rate=xgb_learning_rate,
-            reg_alpha=xgb_reg_alpha,
-            reg_lambda=xgb_reg_lambda,
-            use_label_encoder=False,
-            verbosity=0,
-            random_state=42
-        )
-    elif model_choice == "SVM":
-        model = Pipeline([
-            ("scaler", StandardScaler()),
-            ("svr", SVR(C=svm_C, epsilon=svm_epsilon, kernel=svm_kernel))
-        ])
-    else:  # KNN
-        model = Pipeline([
-            ("scaler", StandardScaler()),
-            ("knn", KNeighborsRegressor(
-                n_neighbors=knn_n_neighbors,
-                weights=knn_weights,
-                algorithm=knn_algorithm))
-        ])
+    # ==== 新增：自动调参训练分支 ====
+    if tune_mode == "自动调参":
+        from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
+        import importlib
+        if importlib.util.find_spec("optuna") is None:
+            import subprocess
+            subprocess.run(["pip", "install", "optuna"])
+        import optuna
+
+        param_grid = {}
+        if model_choice == "随机森林":
+            base_model = RandomForestRegressor(random_state=42)
+            param_grid = {
+                "n_estimators": [50, 100, 200],
+                "max_depth": [None, 5, 10, 20],
+                "min_samples_split": [2, 5, 10],
+                "min_samples_leaf": [1, 2, 4]
+            }
+        elif model_choice == "XGBoost":
+            base_model = XGBRegressor(random_state=42, use_label_encoder=False, verbosity=0)
+            param_grid = {
+                "n_estimators": [50, 100, 200],
+                "max_depth": [3, 6, 10],
+                "learning_rate": [0.01, 0.1, 0.2],
+                "reg_alpha": [0, 0.5, 1.0],
+                "reg_lambda": [0, 1.0, 2.0]
+            }
+        elif model_choice == "SVM":
+            base_model = SVR()
+            param_grid = {
+                "C": [0.1, 1, 10],
+                "epsilon": [0.01, 0.1, 0.5],
+                "kernel": ["rbf", "linear"]
+            }
+        elif model_choice == "KNN":
+            base_model = KNeighborsRegressor()
+            param_grid = {
+                "n_neighbors": [3, 5, 10],
+                "weights": ["uniform", "distance"],
+                "algorithm": ["auto", "ball_tree", "kd_tree"]
+            }
+        if search_strategy == "网格搜索(GridSearchCV)":
+            search = GridSearchCV(
+                base_model, param_grid, cv=3, scoring="neg_mean_squared_error", n_jobs=-1
+            )
+            with st.spinner("网格搜索自动调参中..."):
+                search.fit(X_train, y_train)
+            st.success(f"最优参数：{search.best_params_}")
+            model = search.best_estimator_
+        elif search_strategy == "随机搜索(RandomizedSearchCV)":
+            search = RandomizedSearchCV(
+                base_model, param_grid, n_iter=10, cv=3, scoring="neg_mean_squared_error", n_jobs=-1, random_state=42
+            )
+            with st.spinner("随机搜索自动调参中..."):
+                search.fit(X_train, y_train)
+            st.success(f"最优参数：{search.best_params_}")
+            model = search.best_estimator_
+        else:
+            def objective(trial):
+                if model_choice == "随机森林":
+                    model = RandomForestRegressor(
+                        n_estimators=trial.suggest_int("n_estimators", 50, 200),
+                        max_depth=trial.suggest_int("max_depth", 3, 20),
+                        min_samples_split=trial.suggest_int("min_samples_split", 2, 10),
+                        min_samples_leaf=trial.suggest_int("min_samples_leaf", 1, 4),
+                        random_state=42
+                    )
+                elif model_choice == "XGBoost":
+                    model = XGBRegressor(
+                        n_estimators=trial.suggest_int("n_estimators", 50, 200),
+                        max_depth=trial.suggest_int("max_depth", 3, 10),
+                        learning_rate=trial.suggest_float("learning_rate", 0.01, 0.3),
+                        reg_alpha=trial.suggest_float("reg_alpha", 0.0, 1.0),
+                        reg_lambda=trial.suggest_float("reg_lambda", 0.0, 2.0),
+                        use_label_encoder=False, verbosity=0, random_state=42
+                    )
+                elif model_choice == "SVM":
+                    model = SVR(
+                        C=trial.suggest_float("C", 0.1, 10.0),
+                        epsilon=trial.suggest_float("epsilon", 0.01, 0.5),
+                        kernel=trial.suggest_categorical("kernel", ["rbf", "linear"])
+                    )
+                elif model_choice == "KNN":
+                    model = KNeighborsRegressor(
+                        n_neighbors=trial.suggest_int("n_neighbors", 3, 10),
+                        weights=trial.suggest_categorical("weights", ["uniform", "distance"]),
+                        algorithm=trial.suggest_categorical("algorithm", ["auto", "ball_tree", "kd_tree"])
+                    )
+                model.fit(X_train, y_train)
+                pred = model.predict(X_test)
+                return mean_squared_error(y_test, pred)
+            study = optuna.create_study(direction="minimize")
+            with st.spinner("贝叶斯优化(Optuna)自动调参中..."):
+                study.optimize(objective, n_trials=20)
+            best_params = study.best_params
+            st.success(f"Optuna 贝叶斯优化完成，最佳参数：{best_params}")
+            # 使用最优参数初始化模型
+            if model_choice == "随机森林":
+                model = RandomForestRegressor(**best_params, random_state=42)
+            elif model_choice == "XGBoost":
+                model = XGBRegressor(**best_params, use_label_encoder=False, verbosity=0, random_state=42)
+            elif model_choice == "SVM":
+                model = SVR(**best_params)
+            elif model_choice == "KNN":
+                model = KNeighborsRegressor(**best_params)
+
+    else:
+        # 手动调参分支（保持你原有逻辑）
+        if model_choice == "随机森林":
+            model = RandomForestRegressor(
+                n_estimators=rf_n_estimators,
+                max_depth=rf_max_depth or None,
+                min_samples_split=rf_min_samples_split,
+                min_samples_leaf=rf_min_samples_leaf,
+                random_state=42
+            )
+        elif model_choice == "XGBoost":
+            model = XGBRegressor(
+                n_estimators=xgb_n_estimators,
+                max_depth=xgb_max_depth,
+                learning_rate=xgb_learning_rate,
+                reg_alpha=xgb_reg_alpha,
+                reg_lambda=xgb_reg_lambda,
+                use_label_encoder=False,
+                verbosity=0,
+                random_state=42
+            )
+        elif model_choice == "SVM":
+            model = Pipeline([
+                ("scaler", StandardScaler()),
+                ("svr", SVR(C=svm_C, epsilon=svm_epsilon, kernel=svm_kernel))
+            ])
+        else:  # KNN
+            model = Pipeline([
+                ("scaler", StandardScaler()),
+                ("knn", KNeighborsRegressor(
+                    n_neighbors=knn_n_neighbors,
+                    weights=knn_weights,
+                    algorithm=knn_algorithm))
+            ])
 
     # 训练与预测
     model.fit(X_train, y_train)
